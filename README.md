@@ -1,9 +1,9 @@
-RandevuPoint.js
+RendezvousPoint.js
 ===================
-Creates an internet facing Randevu Point to bypass firewalls and forward traffic into a target network - Created by [Ash47](https://GitHub.com/Ash47)
+Creates an internet facing Rendezvous Point to bypass firewalls and forward traffic into a target network - Created by [Ash47](https://GitHub.com/Ash47)
 
 ## Quick Summary
-  - This script is used to port forward from behind two different Firewalls via an internet facing randevu point
+  - This script is used to port forward from behind two different Firewalls via an internet facing rendezvous point
 
 ## How does it work?
   - A client connects via TLS to the endpoint, and sends a message to say if it's looking to connect (Client A), or if it's accepting connections (CLient B)

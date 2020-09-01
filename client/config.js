@@ -4,6 +4,9 @@ module.exports = {
 
 	// Number of connections to have sitting in a pool ready for a connection
 	gatewayThreads: 3,
+
+	// Should we try every interface to reach the internet?
+	tryAllInterfaces: true,
 	
 	// Configuration of where your RV Server is (on the internet hopefully)
 	rvConfig: {

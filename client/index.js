@@ -1,6 +1,7 @@
 const tls = require('tls');
 const net = require('net');
 const fs = require('fs');
+const { networkInterfaces } = require('os');
 
 const configFile = './config.js';
 let config = require(configFile);
@@ -8,11 +9,67 @@ let config = require(configFile);
 // List of servers that are currently running, key = port
 const currentServers = {};
 
+// Cached IPs
+let cachedIps = [];
+
+function getAllIps() {
+    // We will cache all IPs in this
+    const seenIps = {};
+
+    // Grab all the network interfaces
+    const nets = networkInterfaces();
+
+    // Cycle over them
+    for (const name of Object.keys(nets)) {
+        for (const net of nets[name]) {
+            // Cache this IP (could be IPv4 or IPv6, doesn't matter for us)
+            seenIps[net.address] = true;
+        }
+    }
+
+    // Return all the ips
+    return Object.keys(seenIps);
+}
+
 function tryPortForward(callback, connectToInfo) {
     let doneCallback = false;
 
+    let ourTryIp = null;
+
+    // Patch in an interface, if the option is configured
+    if(config.tryAllInterfaces) {
+        if(cachedIps.length <= 0) {
+            // Completely remove the local address
+            // This means use the default GateWay
+            delete config.rvConfig['localAddress'];
+
+            // Load in new cache
+            cachedIps = getAllIps();
+
+            // If still empty, let's log an error
+            if(cachedIps.length <= 0) {
+                // Log that no IPs were found
+                console.log('[-] Failed to find any NICs, using default NIC');
+            }
+        } else {
+            // Pop an IP off the stack
+            ourTryIp = cachedIps.pop();
+
+            // Store the IP
+            config.rvConfig.localAddress = ourTryIp;
+
+            // Log that we're doing this
+            console.log('[+] Try interface with IP = ' + ourTryIp);
+        }
+    }
+
     const socket = tls.connect(config.rvConfig, () => {
-        console.log('[+] Connected to ' + config.rvConfig.host + ':' + config.rvConfig.port);
+        console.log('[+] Connected to ' + config.rvConfig.host + ':' + config.rvConfig.port + ' via ' + socket.localAddress);
+
+        if(config.tryAllInterfaces) {
+            // Cache this IP again, it's GOOOD
+            cachedIps.push(socket.localAddress);
+        }
 
         // Ensure cleanup
         if (doneCallback) {
@@ -21,6 +78,8 @@ function tryPortForward(callback, connectToInfo) {
     });
 
     socket.on('error', (err) => {
+        console.log(err);
+
         if (doneCallback) return;
         doneCallback = true;
 

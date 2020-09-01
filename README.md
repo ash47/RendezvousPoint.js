@@ -30,6 +30,9 @@ Creates an internet facing Rendezvous Point to bypass firewalls and forward traf
   - `client/config.js`
     - `isGateway` - If true, this client will act as an outgoing gateway, and route the forwarded connections, if false, this client will bind to the ports defined in `portForwards` and try to connect to the hosts / ports via another gateway
     - `gatewayThreads` - When in gateway mode, this is how many unused connections we will maintain to the RV point
+    - `tryAllInterfaces` - Automatically cycle through every interface on the machine to find an active connection to the interface?
+      - If it finds one that works, it will cache that interface until it starts to fail again
+      - If this is false, it will just use your default interface, which generally won't update if your network connections change
     - `rvConfig` - Options for connecting to the RV point
       - `host` - The RV host to connect to
       - `port` - The RV port to connect to
@@ -45,6 +48,28 @@ Creates an internet facing Rendezvous Point to bypass firewalls and forward traf
   - Existing connections are NOT affected
   - If forwarding to HTTPS servers, please note that modern servers keep the conneciton alive, so a simple F5 will NOT point to the new server, if the connection is kept alive
 
+## Example Config - Server
+```javascript
+const fs = require('fs');
+
+module.exports = {
+    // Port that clients will connect to
+    ingestPort: 3000,
+
+    // How long a client has to successfully auth
+    maxAuthTime: 5000, // in ms
+
+    // Options for encryption
+    tlsOptions: {
+        cert: fs.readFileSync('./creds/cert.cert'),
+        key: fs.readFileSync('./creds/key.key'),
+    },
+
+    // Must match client, or they can't connect
+    psk: 'PutSomeKindOfAKeyHereToPreventHacking',
+};
+```
+
 ## Example Config - Gateway Client
 
 ```javascript
@@ -54,6 +79,9 @@ module.exports = {
 
 	// Number of connections to have sitting in a pool ready for a connection
 	gatewayThreads: 3,
+
+  // Should we try every interface to reach the internet?
+  tryAllInterfaces: true,
     
     // RV Point Info
 	rvConfig: {
@@ -77,6 +105,9 @@ module.exports = {
 module.exports = {
     // Is this client a Gateway?
 	isGateway: false,
+
+  // Should we try every interface to reach the internet?
+  tryAllInterfaces: true,
 
 	// RV Point Info
 	rvConfig: {
@@ -110,27 +141,5 @@ module.exports = {
 
 	// Preshared-Key -- Must match server, or ggwp
 	psk: 'PutSomeKindOfAKeyHereToPreventHacking'
-};
-```
-
-## Example Config - Server
-```javascript
-const fs = require('fs');
-
-module.exports = {
-    // Port that clients will connect to
-    ingestPort: 3000,
-
-    // How long a client has to successfully auth
-    maxAuthTime: 5000, // in ms
-
-    // Options for encryption
-    tlsOptions: {
-        cert: fs.readFileSync('./creds/cert.cert'),
-        key: fs.readFileSync('./creds/key.key'),
-    },
-
-    // Must match client, or they can't connect
-    psk: 'PutSomeKindOfAKeyHereToPreventHacking',
 };
 ```

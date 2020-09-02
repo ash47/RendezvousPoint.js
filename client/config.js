@@ -20,7 +20,13 @@ module.exports = {
 	// Which ports are forwarded
 	portForwards: {
 		8080: {
+			// Try to connect via a machine with the following hostname
+			// targetHostname: 'SomeHostname',
+
+			// Host to connect to
 			host: 'en.wikipedia.org',
+
+			// Port to connect to
 			port: 443
 		},
 

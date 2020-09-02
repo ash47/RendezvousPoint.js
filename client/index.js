@@ -1,7 +1,7 @@
 const tls = require('tls');
 const net = require('net');
 const fs = require('fs');
-const { networkInterfaces } = require('os');
+const os = require('os');
 
 const configFile = './config.js';
 let config = require(configFile);
@@ -17,7 +17,7 @@ function getAllIps() {
     const seenIps = {};
 
     // Grab all the network interfaces
-    const nets = networkInterfaces();
+    const nets = os.networkInterfaces();
 
     // Cycle over them
     for (const name of Object.keys(nets)) {
@@ -84,14 +84,14 @@ function tryPortForward(callback, connectToInfo) {
         doneCallback = true;
 
         // Fire callback
-        callback(err);
+        if(callback) callback(err);
     });
 
     socket.on('end', () => {
         if (doneCallback) return;
         doneCallback = true;
 
-        callback(new Error('ended'));
+        if(callback) callback(new Error('ended'));
     });
 
     // Create store for data
@@ -127,20 +127,25 @@ function tryPortForward(callback, connectToInfo) {
             if (doneCallback) return;
             doneCallback = true;
 
-            callback(new Error('socket unknown state'));
+            if(callback) callback(new Error('socket unknown state'));
 
             return;
         }
-
-        // Unhook data event
-        socket.removeAllListeners('data');
-        socket.pause();
 
         // Process events
         if (niceMessage.hasOwnProperty('action') && typeof (niceMessage.action) === 'string') {
             const thisAction = niceMessage.action;
 
-            if (connectToInfo) {
+            // We got some stats
+            if(thisAction === 'stats') {
+                console.log('[+] Here are some stats for you!');
+                console.log(JSON.stringify(niceMessage.stats, null, 4));
+
+                // Stop here
+                return;
+            }
+
+            if (connectToInfo.action === 'connectMe') {
                 switch (thisAction) {
                     case 'connected':
                         // We are now connected
@@ -150,20 +155,34 @@ function tryPortForward(callback, connectToInfo) {
                             port: connectToInfo.port,
                         });
 
+                        // Unhook data event
+                        socket.removeAllListeners('data');
+                        socket.pause();
+
                         if (doneCallback) return;
                         doneCallback = true;
 
                         // Run callback
-                        callback(null, socket);
+                        if(callback) callback(null, socket);
                         return;
                 }
-            } else {
+            }
+            
+            if(connectToInfo.action === 'connectToMe') {
                 switch (thisAction) {
                     case 'connectTo':
                         if (doneCallback) return;
                         doneCallback = true;
 
-                        callback(null, socket, niceMessage);
+                        // Unhook data event
+                        socket.removeAllListeners('data');
+                        socket.pause();
+
+                        if (doneCallback) return;
+                        doneCallback = true;
+
+                        // We good
+                        if(callback) callback(null, socket, niceMessage);
                         return;
                 }
             }
@@ -175,18 +194,24 @@ function tryPortForward(callback, connectToInfo) {
         // Ensure socket is dead
         socket.end();
 
-        callback(new Error('socket unknown state'));
+        if(callback) callback(new Error('socket unknown state'));
     });
 
     const toSend = {
-        psk: config.psk
+        psk: config.psk,
+        action: connectToInfo.action,
     };
 
-    // Are we connecting, or being connected to?
-    if (connectToInfo) {
-        toSend.action = 'connectMe';
-    } else {
-        toSend.action = 'connectToMe';
+    // Add the hostname and IPs if we can route traffic via this beast
+    if(connectToInfo.action === 'connectToMe') {
+        toSend.hostname = os.hostname();
+        toSend.ips = getAllIps();
+    }
+
+    // Is there a targetHostname specified?
+    if(connectToInfo.targetHostname && typeof(connectToInfo.targetHostname) === 'string' && connectToInfo.targetHostname.length > 0) {
+        // Attach the target hostname
+        toSend.targetHostname = connectToInfo.targetHostname;
     }
 
     // Send it
@@ -265,6 +290,8 @@ function portForwardClientLoop() {
         connectedSocket.on('end', () => {
             forwardConnection.end();
         });
+    }, {
+        action: 'connectToMe'
     });
 }
 
@@ -286,6 +313,7 @@ function portForwardServer(bindPort) {
         }
 
         // Host and port to connect to
+        const theTargetHostname = currentServers[bindPort].targetHostname;
         const theHost = currentServers[bindPort].host;
         const thePort = currentServers[bindPort].port;
 
@@ -339,8 +367,10 @@ function portForwardServer(bindPort) {
             // Resume socket
             connectedSocket.resume();
         }, {
+            action: 'connectMe',
             host: theHost,
             port: thePort,
+            targetHostname: theTargetHostname,
         });
     });
 
@@ -381,10 +411,12 @@ function refreshPortForwardServerConfig() {
 
         if(currentServers.hasOwnProperty(portString)) {
             // Update the host and port
+            currentServers[portString].targetHostname = thisConfig.targetHostname;
             currentServers[portString].host = thisConfig.host;
             currentServers[portString].port = thisConfig.port;
         } else {
             currentServers[portString] = {
+                targetHostname: thisConfig.targetHostname,
                 host: thisConfig.host,
                 port: thisConfig.port,
             };
@@ -418,6 +450,11 @@ if (config.isGateway) {
         portForwardClientLoop();
     }
 } else {
+    // Ask for some stats
+    tryPortForward(null, {
+        action: 'stats'
+    });
+
     // Reload config
     refreshPortForwardServerConfig();
 

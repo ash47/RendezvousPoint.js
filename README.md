@@ -17,6 +17,10 @@ Creates an internet facing Rendezvous Point to bypass firewalls and forward traf
   - Configure two clients, samples below
   - Run `node index.js` for the server, and both clients
 
+## How do I see stats / info?
+  - You can review the server's console log which will log out how many active connections there are
+  - You can run the client with GateWay mode off, which will tell you how many connections there are, and dump a list of hostnames and IPs / networks that are available
+
 ## How to run on system startup?
   - Windows: Create a scheduled task to run the `run.bat` file on startup, and allow it to run even without the user logging in
   - Linux: Some kind of boot script? Good luck, too many distros
@@ -41,6 +45,7 @@ Creates an internet facing Rendezvous Point to bypass firewalls and forward traf
     - `portForwards` - This is an object that is used to define what ports to listen on, and where to forward connections when `isGateway` is false, the key is a port (e.g. 8080), and the values are an object that define a host and port to connect to
         - `host` - Host to connect this listener to
         - `port` - Port to connect this listener to
+        - `targetHostname` - Optional paramater which allows you to route via a specific endpoint for your port forward, if this is not defined, then the first available endpoint will be selected
 
 ## How do I edit the port forwards?
   - Edit the `portForwards` in the bind client, the server won't need to be reloaded, rather, new connections on the given port will route to the new server

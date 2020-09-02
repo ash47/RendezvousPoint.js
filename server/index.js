@@ -53,6 +53,23 @@ class PortForwardManager {
         }
     }
 
+    publishStats(socket) {
+        // Send the stats
+        this.sendMessage(socket, {
+            action: 'stats',
+            stats: {
+                totalConnectToMe: this.socketQueueConnectToMe.length,
+                totalConnectMe: this.socketQueueConnectMe.length,
+                connectToMeList: this.socketQueueConnectToMe.map((sock) => {
+                    return {
+                        hostname: sock.hostname,
+                        ips: sock.ips,
+                    }
+                })
+            }
+        });
+    }
+
     onIngestGetConnection(socket) {
         console.log('[+] Got an ingest socket');
 
@@ -129,17 +146,51 @@ class PortForwardManager {
             if (niceMessage.hasOwnProperty('action') && typeof (niceMessage.action) === 'string') {
                 const thisAction = niceMessage.action;
 
+                // Add the hostname
+                if(niceMessage.hostname && typeof(niceMessage.hostname) === 'string') {
+                    socket.hostname = niceMessage.hostname;
+                } else {
+                    socket.hostname = 'Unknown';
+                }
+
+                // Add the NIC IPs
+                if(niceMessage.ips && Array.isArray(niceMessage.ips)) {
+                    socket.ips = niceMessage.ips;
+                } else {
+                    socket.ips = [];
+                }
+
                 switch (thisAction) {
                     case 'connectMe':
                         console.log('[+] Got a connect me');
                         this.socketQueueConnectMe.push(socket);
+
+                        // Is there a target we're looking for?
+                        if(niceMessage.targetHostname && typeof(niceMessage.targetHostname) === 'string' && niceMessage.targetHostname.length > 0) {
+                            socket.targetHostname = niceMessage.targetHostname;
+
+                            console.log(socket.targetHostname);
+                        }
+
+                        // Publish stats
+                        this.publishStats(socket);
+
+                        // Actually try to link it
                         this.tryLinkSockets();
                         return;
 
                     case 'connectToMe':
-                        console.log('[+] Got a connect to me');
+                        console.log('[+] Got a connect to me from ' + socket.hostname);
                         this.socketQueueConnectToMe.push(socket);
                         this.tryLinkSockets();
+                        return;
+
+                    case 'stats':
+                        // Publish stats
+                        this.publishStats(socket);
+
+                        // Kill socket
+                        socket.end();
                         return;
                 }
             }
@@ -181,9 +232,51 @@ class PortForwardManager {
         // We need at least one socket in each queue to make this work
         if(this.socketQueueConnectToMe.length <= 0 || this.socketQueueConnectMe.length <= 0) return;
 
-        // Grab sockets
-        const socketConnectToMe = this.socketQueueConnectToMe.shift();
-        const socketConnectMe = this.socketQueueConnectMe.shift();
+        // Define our sockets
+        let socketConnectToMe = null;
+        let socketConnectMe = null;
+
+        for(let i=0; i<this.socketQueueConnectMe.length; ++i) {
+            const possibleSocketConnectMe = this.socketQueueConnectMe[i];
+
+            // If there is no target hostname defined, take the first socket available
+            if(!possibleSocketConnectMe.targetHostname) {
+                // Store and remove it
+                socketConnectMe = possibleSocketConnectMe;
+                this.socketQueueConnectMe.splice(i, 1);
+
+                socketConnectToMe = this.socketQueueConnectToMe.shift();
+                break;
+            } else {
+                // We need to find a matching socket
+
+                for(let j=0; j<this.socketQueueConnectToMe.length; ++j) {
+                    const possibleSocketConnectToMe = this.socketQueueConnectToMe[j];
+
+                    if(possibleSocketConnectMe.targetHostname.trim().toLowerCase() === possibleSocketConnectToMe.hostname.trim().toLowerCase()) {
+                        socketConnectMe = possibleSocketConnectMe;
+                        this.socketQueueConnectMe.splice(i, 1);
+
+                        socketConnectToMe = possibleSocketConnectToMe;
+                        this.socketQueueConnectToMe.splice(j, 1);
+                        break;
+                    }
+                }
+
+                // Did we find one?
+                if(socketConnectMe && socketConnectToMe) {
+                    break;
+                } else {
+                    console.log('[+] Host is trying to connect via a client called ' + possibleSocketConnectMe.targetHostname + ' but we have no connections from them :(');
+                }
+            }
+        }
+
+        // Check if we failed?
+        if(!socketConnectMe || !socketConnectToMe) {
+            // Failed to find a good match
+            return;
+        }
 
         // Handle errors for both sockets
         socketConnectToMe.on('error', () => {
